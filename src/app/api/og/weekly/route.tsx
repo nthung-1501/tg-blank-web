@@ -1,7 +1,5 @@
-import { ImageResponse } from "@vercel/og";
-
 export const runtime = "nodejs";
-
+import { ImageResponse } from "@vercel/og";
 function safeSplit(s: string | null) {
   if (!s) return [];
   return s.split("|").map((x) => decodeURIComponent(x));

@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
 export const runtime = "nodejs";
+import { NextResponse } from "next/server";
 export async function POST(req: Request) {
   const body = await req.json();
   const tgName = String(body.tgName ?? "Người chơi");

@@ -1,7 +1,5 @@
-import { ImageResponse } from "@vercel/og";
-
 export const runtime = "nodejs";
-
+import { ImageResponse } from "@vercel/og";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const name = searchParams.get("name") ?? "Người chơi";
