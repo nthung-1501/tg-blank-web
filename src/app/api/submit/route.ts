@@ -1,46 +1,86 @@
+// src/app/api/submit/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { vnDateISO } from "@/lib/timeVN";
-export const runtime = "nodejs";
-function norm(s: string) {
-  return (s ?? "").trim().toLowerCase();
+
+function startOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
 }
 
 export async function POST(req: Request) {
-  const body = await req.json();
-  const tgUserId = BigInt(body.tgUserId ?? 0);
-  const tgName = String(body.tgName ?? "Người chơi");
-  const day = String(body.day ?? vnDateISO());
-  const answers: Array<{ questionId: string; values: string[] }> = body.answers ?? [];
+  try {
+    const body = await req.json();
 
-  const qids = answers.map((a) => a.questionId);
-  const qs = await prisma.question.findMany({ where: { id: { in: qids }, day } });
+    const telegramIdRaw = body.telegramId; // number|string
+    const name = (body.name || "Người chơi") as string;
+    const username = (body.username || null) as string | null;
 
-  const byId = new Map(qs.map((q) => [q.id, q]));
+    const questionId = body.questionId as string;
+    const answer = (body.answer || "") as string;
 
-  let score = 0;
+    if (!telegramIdRaw || !questionId) {
+      return NextResponse.json(
+        { ok: false, error: "missing telegramId/questionId" },
+        { status: 400 }
+      );
+    }
 
-  for (const a of answers) {
-    const q = byId.get(a.questionId);
-    if (!q) continue;
+    const telegramId = BigInt(telegramIdRaw);
 
-    const correct: string[] = JSON.parse(q.answers);
-    const userVals = (a.values ?? []).map(norm);
+    const q = await prisma.question.findUnique({
+      where: { id: questionId },
+      select: { id: true, answers: true },
+    });
 
-    const ok =
-      correct.length === userVals.length &&
-      correct.every((c, i) => norm(c) === userVals[i]);
+    if (!q) {
+      return NextResponse.json({ ok: false, error: "question not found" }, { status: 404 });
+    }
 
-    if (ok) score += 1; // +1 mỗi câu (đúng hết blanks)
+    // answers: Json -> bạn tự quy ước, ví dụ: ["A","B"] hoặc {"correct":"A"}
+    let isCorrect = false;
+    const a: any = q.answers;
+
+    if (Array.isArray(a)) {
+      isCorrect = a.map(String).includes(String(answer));
+    } else if (a && typeof a === "object" && "correct" in a) {
+      isCorrect = String(a.correct) === String(answer);
+    }
+
+    const today = startOfDay(new Date());
+
+    const user = await prisma.user.upsert({
+      where: { telegramId },
+      update: { name, username },
+      create: { telegramId, name, username },
+      select: { id: true },
+    });
+
+    await prisma.submission.create({
+      data: {
+        userId: user.id,
+        date: today,
+        questionId,
+        answer,
+        isCorrect,
+      },
+    });
+
+    await prisma.dailyScore.upsert({
+      where: { userId_date: { userId: user.id, date: today } },
+      update: { score: { increment: isCorrect ? 1 : 0 } },
+      create: {
+        userId: user.id,
+        date: today,
+        score: isCorrect ? 1 : 0,
+      },
+    });
+
+    return NextResponse.json({ ok: true, isCorrect });
+  } catch (err: any) {
+    return NextResponse.json(
+      { ok: false, error: err?.message || "submit failed" },
+      { status: 500 }
+    );
   }
-
-  const payload = { answers };
-
-  await prisma.submission.upsert({
-    where: { day_tgUserId: { day, tgUserId } },
-    update: { score, payload: JSON.stringify(payload), tgName },
-    create: { day, tgUserId, tgName, score, payload: JSON.stringify(payload) },
-  });
-
-  return NextResponse.json({ score });
 }

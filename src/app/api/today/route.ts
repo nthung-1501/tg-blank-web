@@ -1,7 +1,6 @@
+// src/app/api/today/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-export const runtime = "nodejs";
 
 function startOfDay(d: Date) {
   const x = new Date(d);
@@ -9,56 +8,56 @@ function startOfDay(d: Date) {
   return x;
 }
 
+function endOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+
 export async function GET() {
   try {
     const now = new Date();
-    const start = startOfDay(now);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
+    const s = startOfDay(now);
+    const e = endOfDay(now);
 
-    // 1) Lấy DailySet của hôm nay (date nằm trong [start, end))
+    // DailySet.date là DateTime @id → ta tìm record trong khoảng ngày
     const daily = await prisma.dailySet.findFirst({
-      where: { date: { gte: start, lt: end } },
+      where: { date: { gte: s, lte: e } },
     });
 
     if (!daily) {
       return NextResponse.json(
-        { ok: false, error: "Chưa có bộ câu hỏi hôm nay (DailySet)" },
+        { ok: false, error: "No daily set for today" },
         { status: 404 }
       );
     }
 
-    // 2) Parse questionIds (Json) -> string[]
-    const idsRaw = daily.questionIds as unknown;
-    const ids =
-      Array.isArray(idsRaw) ? idsRaw.filter((x) => typeof x === "string") : [];
-
-    if (ids.length === 0) {
+    const ids = (daily.questionIds as unknown as string[]) || [];
+    if (!Array.isArray(ids) || ids.length === 0) {
       return NextResponse.json(
-        { ok: false, error: "DailySet.questionIds rỗng/không đúng định dạng" },
+        { ok: false, error: "DailySet.questionIds is empty" },
         { status: 500 }
       );
     }
 
-    // 3) Lấy questions theo id
-    const qs = await prisma.question.findMany({
+    const questions = await prisma.question.findMany({
       where: { id: { in: ids }, isActive: true },
       select: { id: true, prompt: true, answers: true },
     });
 
-    // 4) Sắp theo đúng thứ tự ids
-    const map = new Map(qs.map((q) => [q.id, q]));
-    const questions = ids.map((id) => map.get(id)).filter(Boolean);
+    // sort theo đúng thứ tự ids
+    const map = new Map(questions.map((q) => [q.id, q]));
+    const ordered = ids.map((id) => map.get(id)).filter(Boolean);
 
     return NextResponse.json({
       ok: true,
-      date: daily.date,
-      finishMessage: daily.finishMessage,
-      questions,
+      date: s.toISOString().slice(0, 10),
+      finishMessage: daily.finishMessage || "",
+      questions: ordered,
     });
-  } catch (e: any) {
+  } catch (err: any) {
     return NextResponse.json(
-      { ok: false, error: e?.message || "today api failed" },
+      { ok: false, error: err?.message || "today failed" },
       { status: 500 }
     );
   }
