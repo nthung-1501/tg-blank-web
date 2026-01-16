@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { vnDateISO } from "@/lib/timeVN";
-
+export const runtime = "nodejs";
 function norm(s: string) {
   return (s ?? "").trim().toLowerCase();
 }

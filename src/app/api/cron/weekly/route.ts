@@ -1,7 +1,7 @@
 // src/app/api/cron/weekly/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
+export const runtime = "nodejs";
 function assertCron(req: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return; // nếu bạn chưa dùng secret thì cho qua
