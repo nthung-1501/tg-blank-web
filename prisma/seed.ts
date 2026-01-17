@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-/** YYYY-MM-DD theo múi giờ VN */
+/** dayKey theo VN: YYYY-MM-DD */
 function vnDayKey(d = new Date()) {
   const vn = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" }));
   const yyyy = vn.getFullYear();
@@ -22,45 +22,33 @@ async function main() {
     { prompt: "Đóng Ấn KT: {{1}} là sức mạnh, {{2}} là chiến thắng!", answers: ["đoàn kết", "kiên trì"] },
   ];
 
-  // Tạo 5 question và lấy id
-  const createdIds: string[] = [];
+  // tạo questions (nếu bạn muốn nhập tay trong DB thì có thể bỏ khúc này)
+  const ids: string[] = [];
   for (const s of samples) {
     const q = await prisma.question.create({
-      data: {
-        prompt: s.prompt,
-        answers: s.answers, // Prisma Json: truyền thẳng mảng
-        isActive: true,
-      },
+      data: { prompt: s.prompt, answers: s.answers as any, isActive: true },
       select: { id: true },
     });
-    createdIds.push(q.id);
+    ids.push(q.id);
   }
 
   const finishMessage = "Hôm nay bạn đã đóng ấn thành công! Mai quay lại nhé 😄";
 
-  // Upsert DailySet theo dayKey
-  const seed = Math.floor(Math.random() * 1_000_000_000);
-
+  // DailySet schema mới: dayKey + payload (Json) + seed
   await prisma.dailySet.upsert({
     where: { dayKey },
     update: {
-      seed,
-      payload: {
-        questionIds: createdIds,
-        finishMessage,
-      },
+      payload: { questionIds: ids, finishMessage },
+      seed: "seed.ts",
     },
     create: {
       dayKey,
-      seed,
-      payload: {
-        questionIds: createdIds,
-        finishMessage,
-      },
+      payload: { questionIds: ids, finishMessage },
+      seed: "seed.ts",
     },
   });
 
-  console.log("Seed OK:", { dayKey, questions: createdIds.length, seed });
+  console.log("Seed OK:", { dayKey, questions: ids.length });
 }
 
 main()
@@ -68,6 +56,4 @@ main()
     console.error(e);
     process.exit(1);
   })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  .finally(async () => prisma.$disconnect());

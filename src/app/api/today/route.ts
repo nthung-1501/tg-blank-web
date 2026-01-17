@@ -1,8 +1,10 @@
+// src/app/api/today/route.ts
 export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-/** YYYY-MM-DD theo múi giờ VN */
+/** dayKey theo VN: YYYY-MM-DD */
 function vnDayKey(d = new Date()) {
   const vn = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" }));
   const yyyy = vn.getFullYear();
@@ -15,9 +17,10 @@ export async function GET() {
   try {
     const dayKey = vnDayKey();
 
+    // schema mới: DailySet có unique dayKey
     const daily = await prisma.dailySet.findUnique({
       where: { dayKey },
-      select: { dayKey: true, payload: true, seed: true },
+      select: { dayKey: true, payload: true },
     });
 
     if (!daily) {
@@ -27,13 +30,13 @@ export async function GET() {
       );
     }
 
-    const payload: any = daily.payload ?? {};
-    const ids: string[] = Array.isArray(payload.questionIds) ? payload.questionIds : [];
-    const finishMessage: string = typeof payload.finishMessage === "string" ? payload.finishMessage : "";
+    const payload = (daily.payload ?? {}) as any;
+    const ids = (payload.questionIds ?? []) as string[];
+    const finishMessage = String(payload.finishMessage ?? "");
 
-    if (ids.length === 0) {
+    if (!Array.isArray(ids) || ids.length === 0) {
       return NextResponse.json(
-        { ok: false, error: "DailySet.payload.questionIds is empty", dayKey },
+        { ok: false, error: "DailySet payload.questionIds is empty", dayKey },
         { status: 500 }
       );
     }
@@ -50,7 +53,6 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       dayKey,
-      seed: daily.seed ?? null,
       finishMessage,
       questions: ordered,
     });
