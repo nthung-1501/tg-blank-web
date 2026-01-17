@@ -23,9 +23,13 @@ function splitPrompt(prompt: string, blanks: number) {
 
 export default function GamePage() {
   const router = useRouter();
+
   const [day, setDay] = useState("");
   const [qs, setQs] = useState<Q[]>([]);
   const [i, setI] = useState(0);
+  const [values, setValues] = useState<string[][]>([]);
+  const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState<string>("");
 
   // tạm: lấy tên/id từ localStorage (bạn có thể thay bằng Telegram initData sau)
   const tgName = useMemo(() => {
@@ -37,24 +41,67 @@ export default function GamePage() {
     return localStorage.getItem("tgUserId") || "0";
   }, []);
 
-  const [values, setValues] = useState<string[][]>([]);
-
   useEffect(() => {
-    fetch("/api/today")
-      .then((r) => r.json())
-      .then((d) => {
-        setDay(d.day);
-        setQs(d.questions);
-        setValues(d.questions.map((q: Q) => Array(q.blanks).fill("")));
-      });
+    (async () => {
+      setLoading(true);
+      setApiError("");
+
+      try {
+        const res = await fetch("/api/today", { cache: "no-store" });
+        const d = (await res.json().catch(() => ({}))) as any;
+
+        // /api/today của bạn trả { ok, date, finishMessage, questions }
+        const apiDay = String(d?.day || d?.date || "");
+        setDay(apiDay);
+
+        if (!res.ok || !d?.ok || !Array.isArray(d?.questions)) {
+          // Không crash nữa — chỉ hiển thị thông báo
+          setQs([]);
+          setValues([]);
+          setI(0);
+
+          const errMsg =
+            d?.error ||
+            (res.status === 404
+              ? "Chưa có bộ câu hỏi cho hôm nay (DailySet chưa được tạo)."
+              : "API /api/today lỗi hoặc trả dữ liệu không hợp lệ.");
+          setApiError(errMsg);
+          return;
+        }
+
+        const questions: Q[] = d.questions;
+        setQs(questions);
+        setValues(questions.map((q) => Array(q.blanks).fill("")));
+        setI(0);
+      } catch (e: any) {
+        setQs([]);
+        setValues([]);
+        setI(0);
+        setApiError(e?.message || "Không gọi được /api/today");
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
   const q = qs[i];
   const currentVals = values[i] || [];
 
+  function setBlank(k: number, v: string) {
+    setValues((prev) => {
+      const copy = prev.map((row) => [...row]);
+      if (!copy[i]) copy[i] = [];
+      copy[i][k] = v;
+      return copy;
+    });
+  }
+
   async function next() {
-    if (i < 4) {
-      setI(i + 1);
+    if (!qs.length) return;
+
+    // chưa phải câu cuối
+    if (i < qs.length - 1) {
+      setI((x) => x + 1);
       return;
     }
 
@@ -62,9 +109,9 @@ export default function GamePage() {
       day,
       tgUserId,
       tgName,
-      answers: qs.map((q, idx) => ({
-        questionId: q.id,
-        values: values[idx],
+      answers: qs.map((qq, idx) => ({
+        questionId: qq.id,
+        values: values[idx] || [],
       })),
     };
 
@@ -74,19 +121,69 @@ export default function GamePage() {
       body: JSON.stringify(payload),
     });
 
-    const data = await res.json();
+    const data = await res.json().catch(() => ({} as any));
     router.push(`/done?score=${encodeURIComponent(String(data.score ?? 0))}`);
   }
 
-  function setBlank(k: number, v: string) {
-    setValues((prev) => {
-      const copy = prev.map((row) => [...row]);
-      copy[i][k] = v;
-      return copy;
-    });
+  // UI states
+  if (loading) {
+    return <div style={{ padding: 24 }}>Đang tải câu hỏi…</div>;
   }
 
-  if (!q) return <div style={{ padding: 24 }}>Đang tải câu hỏi…</div>;
+  if (!qs.length) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#d7f7ff", padding: 24 }}>
+        <div style={{ maxWidth: 720, margin: "0 auto" }}>
+          <div style={{ fontWeight: 900, fontSize: 26 }}>Đóng Ấn KT</div>
+
+          <div style={{ marginTop: 10, fontSize: 16, opacity: 0.85 }}>
+            {apiError || "Chưa có câu hỏi hôm nay."}
+          </div>
+
+          <div
+            style={{
+              marginTop: 14,
+              background: "white",
+              borderRadius: 18,
+              padding: 18,
+              boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+              fontSize: 16,
+              lineHeight: 1.6,
+            }}
+          >
+            <div style={{ fontWeight: 800 }}>Gợi ý xử lý:</div>
+            <div style={{ marginTop: 8 }}>
+              - Nếu bạn thấy lỗi 404: hãy tạo DailySet cho hôm nay (cron/seed).
+              <br />
+              - Nếu bạn đang test ngay sau deploy: chờ 10–30s rồi mở lại.
+            </div>
+          </div>
+
+          <button
+            onClick={() => location.reload()}
+            style={{
+              marginTop: 16,
+              width: "100%",
+              padding: "14px 16px",
+              borderRadius: 16,
+              border: "none",
+              background: "#22c8ff",
+              color: "white",
+              fontWeight: 900,
+              fontSize: 18,
+              cursor: "pointer",
+            }}
+          >
+            Tải lại
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!q) {
+    return <div style={{ padding: 24 }}>Đang tải câu hỏi…</div>;
+  }
 
   const parts = splitPrompt(q.prompt, q.blanks);
 
@@ -95,7 +192,7 @@ export default function GamePage() {
       <div style={{ maxWidth: 720, margin: "0 auto" }}>
         <div style={{ fontWeight: 800, fontSize: 22 }}>Đóng Ấn KT</div>
         <div style={{ marginTop: 8, opacity: 0.8 }}>
-          Câu {i + 1}/5
+          Câu {i + 1}/{qs.length}
         </div>
 
         <div
@@ -149,7 +246,7 @@ export default function GamePage() {
             cursor: "pointer",
           }}
         >
-          Chơi tiếp
+          {i < qs.length - 1 ? "Chơi tiếp" : "Nộp bài"}
         </button>
       </div>
     </div>
