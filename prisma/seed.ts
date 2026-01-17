@@ -3,20 +3,21 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 /**
- * Lấy ngày hiện tại theo múi giờ VN và trả về DateTime 00:00:00 +07:00
- * DailySet.date là @id DateTime nên dùng Date.
+ * Trả về dayKey theo múi giờ VN dạng "YYYY-MM-DD"
  */
-function vnStartOfDayDate() {
+function vnDayKey() {
   const now = new Date();
-  const vn = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" }));
+  const vn = new Date(
+    now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" })
+  );
   const yyyy = vn.getFullYear();
   const mm = String(vn.getMonth() + 1).padStart(2, "0");
   const dd = String(vn.getDate()).padStart(2, "0");
-  return new Date(`${yyyy}-${mm}-${dd}T00:00:00.000+07:00`);
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 async function main() {
-  const date = vnStartOfDayDate();
+  const dayKey = vnDayKey();
 
   const samples = [
     { prompt: "Hôm nay trời {{1}} và tôi uống {{2}}.", answers: ["đẹp", "sữa"] },
@@ -26,13 +27,13 @@ async function main() {
     { prompt: "Đóng Ấn KT: {{1}} là sức mạnh, {{2}} là chiến thắng!", answers: ["đoàn kết", "kiên trì"] },
   ];
 
-  // Tạo 5 question và lấy id
+  // Tạo questions và lấy id
   const createdIds: string[] = [];
   for (const s of samples) {
     const q = await prisma.question.create({
       data: {
         prompt: s.prompt,
-        answers: s.answers, // Json => truyền thẳng mảng
+        answers: s.answers as any, // nếu schema answers là Json
         isActive: true,
       },
       select: { id: true },
@@ -40,22 +41,29 @@ async function main() {
     createdIds.push(q.id);
   }
 
-  // Upsert DailySet cho ngày hôm nay
+  const finishMessage = "Hôm nay bạn đã đóng ấn thành công! Mai quay lại nhé 😄";
+
+  // Lưu DailySet theo schema mới: { id, dayKey, seed, payload, createdAt, updatedAt }
+  // payload sẽ chứa những thứ trước đây bạn để ở questionIds + finishMessage
+  const seed = Math.floor(Math.random() * 1_000_000);
+
   await prisma.dailySet.upsert({
-    where: { date },
+    where: { dayKey }, // dayKey là unique
     update: {
-      questionIds: createdIds, // Json => truyền thẳng mảng id
-      finishMessage: "Hôm nay bạn đã đóng ấn thành công! Mai quay lại nhé 😄",
+      seed,
+      payload: { questionIds: createdIds, finishMessage },
+      updatedAt: new Date(),
     },
     create: {
-      date,
-      questionIds: createdIds,
-      finishMessage: "Hôm nay bạn đã đóng ấn thành công! Mai quay lại nhé 😄",
+      id: crypto.randomUUID(),
+      dayKey,
+      seed,
+      payload: { questionIds: createdIds, finishMessage },
     },
   });
 
   console.log("Seed OK:", {
-    date: date.toISOString(),
+    dayKey,
     questions: createdIds.length,
   });
 }

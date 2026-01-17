@@ -8,12 +8,11 @@ datasource db {
 }
 
 model User {
-  id         String   @id @default(cuid())
-  telegramId BigInt   @unique
-  name       String
-  username   String?
-  createdAt  DateTime @default(now())
-
+  id          String       @id @default(cuid())
+  telegramId  BigInt       @unique
+  name        String
+  username    String?
+  createdAt   DateTime     @default(now())
   scores      DailyScore[]
   submissions Submission[]
 }
@@ -27,21 +26,13 @@ model Question {
   updatedAt DateTime @updatedAt
 }
 
-model DailySet {
-  date          DateTime @id
-  questionIds   Json
-  finishMessage String
-  publishedAt   DateTime @default(now())
-}
-
 model DailyScore {
   id         String   @id @default(cuid())
   userId     String
   date       DateTime
   score      Int
   finishedAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
+  user       User     @relation(fields: [userId], references: [id])
 
   @@unique([userId, date])
 }
@@ -54,9 +45,9 @@ model Submission {
   answer     String
   isCorrect  Boolean
   createdAt  DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
+  user       User     @relation(fields: [userId], references: [id])
 }
+
 model Setting {
   key       String   @id
   value     String

@@ -1,29 +1,31 @@
 // src/app/api/today/route.ts
 export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-function startOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-
-function endOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
+/**
+ * Lấy dayKey theo múi giờ VN dạng "YYYY-MM-DD"
+ */
+function vnDayKey() {
+  const now = new Date();
+  const vn = new Date(
+    now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" })
+  );
+  const yyyy = vn.getFullYear();
+  const mm = String(vn.getMonth() + 1).padStart(2, "0");
+  const dd = String(vn.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 export async function GET() {
   try {
-    const now = new Date();
-    const s = startOfDay(now);
-    const e = endOfDay(now);
+    const dayKey = vnDayKey();
 
-    // DailySet.date là DateTime @id → ta tìm record trong khoảng ngày
-    const daily = await prisma.dailySet.findFirst({
-      where: { date: { gte: s, lte: e } },
+    // Schema mới: tìm theo dayKey
+    const daily = await prisma.dailySet.findUnique({
+      where: { dayKey },
+      select: { dayKey: true, payload: true },
     });
 
     if (!daily) {
@@ -33,10 +35,14 @@ export async function GET() {
       );
     }
 
-    const ids = (daily.questionIds as unknown as string[]) || [];
+    // payload chứa questionIds + finishMessage
+    const payload = (daily.payload ?? {}) as any;
+    const ids = (payload.questionIds ?? []) as string[];
+    const finishMessage = (payload.finishMessage ?? "") as string;
+
     if (!Array.isArray(ids) || ids.length === 0) {
       return NextResponse.json(
-        { ok: false, error: "DailySet.questionIds is empty" },
+        { ok: false, error: "DailySet payload.questionIds is empty" },
         { status: 500 }
       );
     }
@@ -52,8 +58,8 @@ export async function GET() {
 
     return NextResponse.json({
       ok: true,
-      date: s.toISOString().slice(0, 10),
-      finishMessage: daily.finishMessage || "",
+      dayKey,
+      finishMessage,
       questions: ordered,
     });
   } catch (err: any) {
