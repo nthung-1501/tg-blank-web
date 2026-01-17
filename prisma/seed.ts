@@ -2,14 +2,9 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-/**
- * Trả về dayKey theo múi giờ VN dạng "YYYY-MM-DD"
- */
-function vnDayKey() {
-  const now = new Date();
-  const vn = new Date(
-    now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" })
-  );
+/** YYYY-MM-DD theo múi giờ VN */
+function vnDayKey(d = new Date()) {
+  const vn = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" }));
   const yyyy = vn.getFullYear();
   const mm = String(vn.getMonth() + 1).padStart(2, "0");
   const dd = String(vn.getDate()).padStart(2, "0");
@@ -27,13 +22,13 @@ async function main() {
     { prompt: "Đóng Ấn KT: {{1}} là sức mạnh, {{2}} là chiến thắng!", answers: ["đoàn kết", "kiên trì"] },
   ];
 
-  // Tạo questions và lấy id
+  // Tạo 5 question và lấy id
   const createdIds: string[] = [];
   for (const s of samples) {
     const q = await prisma.question.create({
       data: {
         prompt: s.prompt,
-        answers: s.answers as any, // nếu schema answers là Json
+        answers: s.answers, // Prisma Json: truyền thẳng mảng
         isActive: true,
       },
       select: { id: true },
@@ -43,29 +38,29 @@ async function main() {
 
   const finishMessage = "Hôm nay bạn đã đóng ấn thành công! Mai quay lại nhé 😄";
 
-  // Lưu DailySet theo schema mới: { id, dayKey, seed, payload, createdAt, updatedAt }
-  // payload sẽ chứa những thứ trước đây bạn để ở questionIds + finishMessage
-  const seed = Math.floor(Math.random() * 1_000_000);
+  // Upsert DailySet theo dayKey
+  const seed = Math.floor(Math.random() * 1_000_000_000);
 
   await prisma.dailySet.upsert({
-    where: { dayKey }, // dayKey là unique
+    where: { dayKey },
     update: {
       seed,
-      payload: { questionIds: createdIds, finishMessage },
-      updatedAt: new Date(),
+      payload: {
+        questionIds: createdIds,
+        finishMessage,
+      },
     },
     create: {
-      id: crypto.randomUUID(),
       dayKey,
       seed,
-      payload: { questionIds: createdIds, finishMessage },
+      payload: {
+        questionIds: createdIds,
+        finishMessage,
+      },
     },
   });
 
-  console.log("Seed OK:", {
-    dayKey,
-    questions: createdIds.length,
-  });
+  console.log("Seed OK:", { dayKey, questions: createdIds.length, seed });
 }
 
 main()

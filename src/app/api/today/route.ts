@@ -1,17 +1,10 @@
-// src/app/api/today/route.ts
 export const runtime = "nodejs";
-
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-/**
- * Lấy dayKey theo múi giờ VN dạng "YYYY-MM-DD"
- */
-function vnDayKey() {
-  const now = new Date();
-  const vn = new Date(
-    now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" })
-  );
+/** YYYY-MM-DD theo múi giờ VN */
+function vnDayKey(d = new Date()) {
+  const vn = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" }));
   const yyyy = vn.getFullYear();
   const mm = String(vn.getMonth() + 1).padStart(2, "0");
   const dd = String(vn.getDate()).padStart(2, "0");
@@ -22,27 +15,25 @@ export async function GET() {
   try {
     const dayKey = vnDayKey();
 
-    // Schema mới: tìm theo dayKey
     const daily = await prisma.dailySet.findUnique({
       where: { dayKey },
-      select: { dayKey: true, payload: true },
+      select: { dayKey: true, payload: true, seed: true },
     });
 
     if (!daily) {
       return NextResponse.json(
-        { ok: false, error: "No daily set for today" },
+        { ok: false, error: "No daily set for today", dayKey },
         { status: 404 }
       );
     }
 
-    // payload chứa questionIds + finishMessage
-    const payload = (daily.payload ?? {}) as any;
-    const ids = (payload.questionIds ?? []) as string[];
-    const finishMessage = (payload.finishMessage ?? "") as string;
+    const payload: any = daily.payload ?? {};
+    const ids: string[] = Array.isArray(payload.questionIds) ? payload.questionIds : [];
+    const finishMessage: string = typeof payload.finishMessage === "string" ? payload.finishMessage : "";
 
-    if (!Array.isArray(ids) || ids.length === 0) {
+    if (ids.length === 0) {
       return NextResponse.json(
-        { ok: false, error: "DailySet payload.questionIds is empty" },
+        { ok: false, error: "DailySet.payload.questionIds is empty", dayKey },
         { status: 500 }
       );
     }
@@ -59,6 +50,7 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       dayKey,
+      seed: daily.seed ?? null,
       finishMessage,
       questions: ordered,
     });
